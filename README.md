@@ -1,9 +1,8 @@
-# StudentInfo
-# 资金后台管理系统(vue+express)
+# 成绩管理系统(vue+express)
 
 ## 描述
 
-写这个项目主要是为了学习下element这个UI框架
+前面用express+mongodb做了个资金管理的，试着换成mysql做了这个学生成绩管理.简单的实现了下单点登录的功能
 
 ## 主要技术栈
 
@@ -21,7 +20,7 @@ node.js
 
 express
 
-mongodb
+mysql
 
 ### 跨域相关
 
@@ -108,16 +107,27 @@ axios.interceptors.request.use(config => {
 ### 数据库连接
 
 ```
-//  连接数据库
-const mongoose =require('mongoose')
-mongoose.connect('mongodb://localhost/test',{ useNewUrlParser: true });
+var mysql = require("mysql")
+var pool = mysql.createPool({
+    host:"localhost",
+    user:"root",
+    password:"123456",
+    database:"student"
+})//数据库连接配置
 
-//连接数据库
-var db = mongoose.connection;//数据库的连接对象
-db.on('error', console.error.bind(console, 'connection error:'));
-db.once('open', function() {
-  console.log('db ok')
-});
+//数据库查询封装
+exports.query = (sql)=>{
+    return new Promise((resolve,reject)=>{
+        pool.query(sql,(err,results,fields)=>{
+            if(err){
+                console.log(err)
+                return reject(err)
+            }
+            resolve(results);
+        })
+    })
+    
+}
 ```
 
 ### jwt实现token
@@ -182,13 +192,30 @@ passport验证token
 
 ```
 npm install passport-jwt passport
-
 ```
 
-验证 token
+验证 token,实现单点登录
 
 ```
- passport.authenticate('jwt', { session: false }),
-
+app.use('/api/grade', passport.authenticate('jwt', { session: false }),async(req,res,next)=>{
+	let sql = `select login_time,token from online,user where user.id=${req.user.id} and user.id = online.uid`
+	let data = await db.query(sql)
+	let login_time =parseInt(data[0].login_time)+60*60*1000
+	if (req.headers.authorization == data[0].token) {
+		if (Date.now() <= login_time) {
+			console.log("token有效");
+			let new_login_time_sql = `update online set login_time = '${Date.now()}' where uid = ${req.user.id}`
+			await db.query(new_login_time_sql)
+			next()
+		  }else{
+			console.log("token过期");
+			let sql_detele_token =  `delete from online where uid = ${req.user.id}`
+			await db.query(sql_detele_token)
+			res.status(401).send({msg:"token过期，请重新登录"})
+		  }
+	}else{
+	  res.status(401).send({msg:"token无效，请重新登录"})
+	}
+},gradeRouter);
 ```
 
